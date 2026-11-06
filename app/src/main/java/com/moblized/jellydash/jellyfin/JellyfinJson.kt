@@ -125,6 +125,7 @@ object JellyfinJson {
             defaultAudioIndex = o.int("DefaultAudioStreamIndex"),
             defaultSubtitleIndex = o.int("DefaultSubtitleStreamIndex"),
             runTimeTicks = o.long("RunTimeTicks"),
+            size = o.long("Size"),
         )
     }
 
@@ -144,6 +145,32 @@ object JellyfinJson {
             isDefault = o.optBoolean("IsDefault"),
             channels = o.int("Channels"),
         )
+    }
+
+    /** An item saved with a download, so it can be shown and played with no connection. */
+    fun itemToJson(i: Item): JSONObject = JSONObject().apply {
+        put("Id", i.id)
+        put("Name", i.name)
+        put("Type", i.kind.name)
+        i.seriesName?.let { put("SeriesName", it) }
+        i.seriesId?.let { put("SeriesId", it) }
+        i.seasonId?.let { put("SeasonId", it) }
+        i.index?.let { put("IndexNumber", it) }
+        i.parentIndex?.let { put("ParentIndexNumber", it) }
+        i.year?.let { put("ProductionYear", it) }
+        i.overview?.let { put("Overview", it) }
+        i.runTimeTicks?.let { put("RunTimeTicks", it) }
+        i.officialRating?.let { put("OfficialRating", it) }
+        i.communityRating?.let { put("CommunityRating", it) }
+        put("UserData", JSONObject().put("PlaybackPositionTicks", i.positionTicks).put("Played", i.played))
+        if (i.imageItemId != null && i.imageTag != null) {
+            if (i.imageItemId == i.id) {
+                put("ImageTags", JSONObject().put("Primary", i.imageTag))
+            } else {
+                put("SeriesPrimaryImageTag", i.imageTag)
+                if (i.seriesId == null) put("SeriesId", i.imageItemId)
+            }
+        }
     }
 
     fun report(r: PlaybackReport): String = JSONObject().apply {

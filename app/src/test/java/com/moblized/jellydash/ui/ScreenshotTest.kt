@@ -11,6 +11,11 @@ import com.moblized.jellydash.data.Settings
 import com.moblized.jellydash.data.ThemeChoice
 import com.moblized.jellydash.data.WhenMoving
 import com.moblized.jellydash.update.AppRelease
+import com.moblized.jellydash.Graph
+import com.moblized.jellydash.car.FakeJellyfin
+import com.moblized.jellydash.data.DownloadQuality
+import com.moblized.jellydash.downloads.DownloadEntry
+import androidx.media3.exoplayer.offline.Download
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,6 +45,45 @@ class ScreenshotTest {
         account, settings, perms, update, "1.0.12",
         onAllowLocation = {}, onAllowNotifications = {}, onSettings = {}, onCheckUpdate = {}, onInstall = {}, onSignOut = {},
     )
+
+    @Test
+    fun library() {
+        Graph.reset()
+        Graph.override(jellyfin = FakeJellyfin())
+        shoot("05_library") {
+            LibraryTab(listOf(Page.Libraries), {}, {}, emptyList(), LibraryActions({}, {}))
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w412dp-h1400dp-xxhdpi")
+    fun showWithDownloads() {
+        Graph.reset()
+        val fake = FakeJellyfin()
+        Graph.override(jellyfin = fake)
+        val eps = fake.episodes
+        val entries = listOf(
+            DownloadEntry(eps[8], Download.STATE_COMPLETED, 100f, 0, 2_100_000_000, DownloadQuality.Truck, true, "a"),
+            DownloadEntry(eps[9], Download.STATE_DOWNLOADING, 42f, 900_000_000, 2_100_000_000, DownloadQuality.Truck, true, "b"),
+            DownloadEntry(eps[10], Download.STATE_QUEUED, 0f, 0, null, DownloadQuality.Truck, true, "c", waitingForWifi = true),
+        )
+        shoot("06_show_downloads", dark = true) {
+            LibraryTab(listOf(Page.Libraries, Page.Show(fake.show)), {}, {}, entries, LibraryActions({}, {}))
+        }
+    }
+
+    @Test
+    fun downloadsTab() {
+        val fake = FakeJellyfin()
+        val entries = listOf(
+            DownloadEntry(fake.movies[0], Download.STATE_DOWNLOADING, 63f, 2_000_000_000, 3_400_000_000, DownloadQuality.Truck, false, "m1"),
+            DownloadEntry(fake.episodes[9], Download.STATE_COMPLETED, 100f, 0, 1_900_000_000, DownloadQuality.Truck, true, "e"),
+            DownloadEntry(fake.movies[4], Download.STATE_FAILED, 10f, 0, null, DownloadQuality.Truck, true, "m5"),
+        )
+        shoot("07_downloads") {
+            DownloadsContent(entries, wifiOnly = true, onWifiOnly = {}, onRemove = {}, onRetry = {}, poster = { item, m -> PosterPlaceholder(item, m) })
+        }
+    }
 
     @Test
     fun signIn() = shoot("01_sign_in") {

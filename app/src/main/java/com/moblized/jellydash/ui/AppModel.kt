@@ -42,6 +42,55 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     private val prefs = Graph.prefs(app)
     private val jellyfin = Graph.jellyfin(app)
     private val updater = Updater(app)
+    private val downloadCenter = Graph.downloads(app)
+
+    val downloads: StateFlow<List<com.moblized.jellydash.downloads.DownloadEntry>> = downloadCenter.entries
+
+    /** A short note for the bottom of the screen, like "Couldn't download". */
+    private val _note = MutableStateFlow<String?>(null)
+    val note: StateFlow<String?> = _note.asStateFlow()
+
+    fun clearNote() {
+        _note.value = null
+    }
+
+    init {
+        // Send anything watched offline, now that the phone is open.
+        viewModelScope.launch {
+            if (prefs.currentAccount != null) runCatching { Graph.playback(app).syncOfflineProgress() }
+        }
+    }
+
+    /** Queues downloads, one after another; a season's worth goes in episode order. */
+    fun download(items: List<com.moblized.jellydash.jellyfin.Item>) {
+        val todo = items.filter { it.kind.playable && downloadCenter.entry(it.id)?.let { e -> !e.failed } != true }
+        if (todo.isEmpty()) return
+        viewModelScope.launch {
+            var failed = 0
+            var last: String? = null
+            for (item in todo) {
+                try {
+                    downloadCenter.download(item)
+                } catch (e: Exception) {
+                    failed++
+                    last = e.message
+                }
+            }
+            if (failed > 0) {
+                _note.value = if (todo.size == 1) "Couldn't download: ${last ?: "unknown error"}" else "$failed of ${todo.size} couldn't download: ${last ?: "unknown error"}"
+            }
+        }
+    }
+
+    fun removeDownload(itemId: String) = downloadCenter.remove(itemId)
+
+    /** Where you are in the Library tab. */
+    private val _library = MutableStateFlow<List<Page>>(listOf(Page.Libraries))
+    val library: StateFlow<List<Page>> = _library.asStateFlow()
+
+    fun open(page: Page) = _library.update { it + page }
+
+    fun back() = _library.update { if (it.size > 1) it.dropLast(1) else it }
 
     val account: StateFlow<Account?> = prefs.accountFlow
     val settings: StateFlow<Settings> = prefs.settingsFlow
@@ -95,6 +144,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun changeSettings(change: (Settings) -> Settings) {
         prefs.update(change)
         IconSwitcher.apply(getApplication<Application>(), prefs.isDark(getApplication<Application>()))
+        downloadCenter.applySettings()
     }
 
     /** Looks for a new build at most every few hours on launch; always when asked. */

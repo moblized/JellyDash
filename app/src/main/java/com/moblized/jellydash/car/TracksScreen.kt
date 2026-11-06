@@ -10,6 +10,7 @@ import androidx.car.app.model.SectionedItemList
 import androidx.car.app.model.Template
 import com.moblized.jellydash.Graph
 import com.moblized.jellydash.R
+import androidx.media3.common.C
 
 /** Audio language and subtitles for what's playing. */
 class TracksScreen(carContext: CarContext) : Screen(carContext) {
@@ -17,6 +18,7 @@ class TracksScreen(carContext: CarContext) : Screen(carContext) {
 
     override fun onGetTemplate(): Template {
         val b = ListTemplate.Builder().setTitle("Audio and subtitles").setHeaderAction(Action.BACK)
+        if (playback.state.value?.offline == true) return offline(b)
         val plan = playback.state.value?.plan
             ?: return b.setSingleList(ItemList.Builder().setNoItemsMessage("Nothing is playing").build()).build()
 
@@ -66,6 +68,32 @@ class TracksScreen(carContext: CarContext) : Screen(carContext) {
 
         if (tracks.size > 1) b.addSectionedList(SectionedItemList.create(audio.build(), "Audio"))
         b.addSectionedList(SectionedItemList.create(subs.build(), "Subtitles"))
+        return b.build()
+    }
+
+    /** A download: the tracks inside the file, switched right on the phone. */
+    private fun offline(b: ListTemplate.Builder): Template {
+        val check = carContext.icon(R.drawable.ic_check)
+        val all = playback.localTracks()
+        fun row(title: String, selected: Boolean, pick: () -> Unit) = Row.Builder()
+            .setTitle(title)
+            .apply { if (selected) setImage(check) }
+            .setOnClickListener {
+                pick()
+                screenManager.pop()
+            }
+            .build()
+        val audio = all.filter { it.type == C.TRACK_TYPE_AUDIO }
+        val text = all.filter { it.type == C.TRACK_TYPE_TEXT }
+        if (audio.size > 1) {
+            val l = ItemList.Builder()
+            audio.forEach { t -> l.addItem(row(t.label, t.selected) { playback.chooseLocal(t) }) }
+            b.addSectionedList(SectionedItemList.create(l.build(), "Audio"))
+        }
+        val s = ItemList.Builder()
+        s.addItem(row("Off", text.none { it.selected }) { playback.localSubtitlesOff() })
+        text.forEach { t -> s.addItem(row(t.label, t.selected) { playback.chooseLocal(t) }) }
+        b.addSectionedList(SectionedItemList.create(s.build(), "Subtitles"))
         return b.build()
     }
 }

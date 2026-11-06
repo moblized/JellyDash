@@ -16,7 +16,12 @@ object DeviceProfile {
     private val directVideo = listOf("h264", "hevc", "vp9", "av1")
     private val directAudio = "aac,mp3,opus,flac,vorbis"
 
-    fun build(maxBitrate: Int): JSONObject = JSONObject().apply {
+    fun build(
+        maxBitrate: Int,
+        maxWidth: Int? = null,
+        maxHeight: Int? = null,
+        subtitles: SubtitleDelivery = SubtitleDelivery.Separate,
+    ): JSONObject = JSONObject().apply {
         put("Name", "JellyDash")
         put("MaxStreamingBitrate", maxBitrate)
         put("MaxStaticBitrate", maxBitrate)
@@ -51,6 +56,9 @@ object DeviceProfile {
         for (codec in directVideo) {
             val conditions = JSONArray().put(condition("EqualsAny", "VideoRangeType", "SDR"))
             if (codec == "h264") conditions.put(condition("LessThanEqual", "VideoBitDepth", "8"))
+            // Also caps what the server converts to.
+            maxWidth?.let { conditions.put(condition("LessThanEqual", "Width", it.toString())) }
+            maxHeight?.let { conditions.put(condition("LessThanEqual", "Height", it.toString())) }
             codecs.put(JSONObject().put("Type", "Video").put("Codec", codec).put("Conditions", conditions))
         }
         codecs.put(
@@ -58,8 +66,15 @@ object DeviceProfile {
         )
         put("CodecProfiles", codecs)
         val subs = JSONArray()
-        for (f in listOf("srt", "subrip", "vtt", "webvtt", "ass", "ssa")) subs.put(JSONObject().put("Format", f).put("Method", "External"))
-        for (f in listOf("pgs", "pgssub", "dvdsub", "dvbsub", "sub", "idx")) subs.put(JSONObject().put("Format", f).put("Method", "Encode"))
+        val text = listOf("srt", "subrip", "vtt", "webvtt", "ass", "ssa")
+        val pictures = listOf("pgs", "pgssub", "dvdsub", "dvbsub", "sub", "idx")
+        val (textMethod, pictureMethod) = when (subtitles) {
+            SubtitleDelivery.Separate -> "External" to "Encode"
+            SubtitleDelivery.InFile -> "Embed" to "Embed"
+            SubtitleDelivery.Burned -> "Encode" to "Encode"
+        }
+        for (f in text) subs.put(JSONObject().put("Format", f).put("Method", textMethod))
+        for (f in pictures) subs.put(JSONObject().put("Format", f).put("Method", pictureMethod))
         put("SubtitleProfiles", subs)
     }
 

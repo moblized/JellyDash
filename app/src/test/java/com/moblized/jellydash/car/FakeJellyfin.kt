@@ -93,6 +93,10 @@ open class FakeJellyfin : Jellyfin {
     }
 
     override suspend fun stopEncoding(playSessionId: String) {}
+    val played = CopyOnWriteArrayList<String>()
+    override suspend fun markPlayed(itemId: String) {
+        played += itemId
+    }
     override suspend fun image(url: String): ByteArray? = null
     override fun imageUrl(item: Item, height: Int): String? = null
     override fun directUrl(itemId: String, source: MediaSource, playSessionId: String?) = "http://127.0.0.1:9/Videos/$itemId/stream?static=true"

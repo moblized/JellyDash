@@ -84,17 +84,23 @@ class Posters(
     private val jellyfin: Jellyfin,
     private val scope: CoroutineScope,
     private val height: Int,
+    /** Posters saved with downloads, which show with no connection. */
+    private val saved: ((String) -> java.io.File?)? = null,
     private val onLoaded: () -> Unit,
 ) {
     private val pending = HashSet<String>()
     private var notifyJob: Job? = null
 
     fun icon(item: Item): CarIcon? {
-        val url = jellyfin.imageUrl(item, height) ?: return null
+        val file = saved?.invoke(item.id)
+        val url = if (file != null) "file:${file.path}" else jellyfin.imageUrl(item, height) ?: return null
         cache.get(url)?.let { return CarIcon.Builder(IconCompat.createWithBitmap(it)).build() }
         if (pending.add(url)) {
             scope.launch {
-                val bmp = withContext(Dispatchers.IO) { jellyfin.image(url)?.let { decode(it, height) } }
+                val bmp = withContext(Dispatchers.IO) {
+                    val bytes = if (file != null) runCatching { file.readBytes() }.getOrNull() else jellyfin.image(url)
+                    bytes?.let { decode(it, height) }
+                }
                 if (bmp != null) {
                     cache.put(url, bmp)
                     scheduleNotify()

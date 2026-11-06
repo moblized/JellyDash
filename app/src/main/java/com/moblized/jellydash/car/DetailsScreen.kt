@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 /** A movie or episode: what it is, and Resume or Play. */
 class DetailsScreen(carContext: CarContext, private val start: Item) : Screen(carContext) {
     private val jellyfin = Graph.jellyfin(carContext)
-    private val posters = Posters(jellyfin, lifecycleScope, 300) { invalidate() }
+    private val posters = Posters(jellyfin, lifecycleScope, 300, Graph.downloads(carContext)::posterFile) { invalidate() }
     private var item: Item? = null
 
     init {

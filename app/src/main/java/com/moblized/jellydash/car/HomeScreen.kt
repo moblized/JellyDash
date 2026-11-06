@@ -27,7 +27,8 @@ import kotlinx.coroutines.launch
 class HomeScreen(carContext: CarContext) : Screen(carContext) {
     private val jellyfin = Graph.jellyfin(carContext)
     private val prefs = Graph.prefs(carContext)
-    private val posters = Posters(jellyfin, lifecycleScope, 160) { invalidate() }
+    private val downloads = Graph.downloads(carContext)
+    private val posters = Posters(jellyfin, lifecycleScope, 160, Graph.downloads(carContext)::posterFile) { invalidate() }
 
     private var loading = true
     private var error: String? = null
@@ -36,10 +37,17 @@ class HomeScreen(carContext: CarContext) : Screen(carContext) {
     private var libraries: List<Library> = emptyList()
     private val totals = HashMap<String, Int>()
 
+    /** Finished downloads: they play with no connection, so they come first. */
+    private val saved: List<Item> get() = downloads.entries.value.filter { it.done }.map { it.item }
+
     init {
         load()
         // Signing in or out on the phone updates the car straight away.
         lifecycleScope.launch { prefs.accountFlow.drop(1).collect { load() } }
+        // A download finishing shows up straight away too.
+        lifecycleScope.launch {
+            downloads.entries.drop(1).collect { if (!loading) invalidate() }
+        }
     }
 
     private fun load() {
@@ -68,6 +76,8 @@ class HomeScreen(carContext: CarContext) : Screen(carContext) {
                     resume = r.await()
                     nextUp = n.await().filter { up -> resume.none { it.id == up.id } }
                 }
+                // Back online: send anything watched offline.
+                launch { Graph.playback(carContext).syncOfflineProgress() }
             } catch (e: Exception) {
                 error = e.message ?: "Couldn't load your libraries"
             }
@@ -86,7 +96,8 @@ class HomeScreen(carContext: CarContext) : Screen(carContext) {
                 .addAction(Action.Builder().setTitle("Try again").setOnClickListener { load() }.build())
                 .build()
         }
-        error?.let { msg ->
+        val offline = saved
+        error?.takeIf { offline.isEmpty() }?.let { msg ->
             return MessageTemplate.Builder(msg)
                 .setTitle(account.serverName)
                 .setHeaderAction(Action.APP_ICON)
@@ -115,6 +126,12 @@ class HomeScreen(carContext: CarContext) : Screen(carContext) {
             budget -= take.size
             b.addSectionedList(SectionedItemList.create(ItemList.Builder().apply { take.forEach { addItem(it) } }.build(), title))
         }
+        if (error != null) {
+            // No server: just the downloads, which play from the phone.
+            section("Offline · your downloads", offline.map { playRow(it, downloaded = true) })
+            return b.build()
+        }
+        section("Downloads", offline.take(4).map { playRow(it, downloaded = true) })
         section("Continue watching", resume.map { playRow(it) })
         section("Next up", nextUp.map { playRow(it) })
         val libRows = libraries.map { lib ->
@@ -127,15 +144,16 @@ class HomeScreen(carContext: CarContext) : Screen(carContext) {
                 .setOnClickListener { Open.library(this, lib, total) }
                 .build()
         }
-        if (libRows.isEmpty() && resume.isEmpty() && nextUp.isEmpty()) {
+        if (libRows.isEmpty() && resume.isEmpty() && nextUp.isEmpty() && offline.isEmpty()) {
             return b.setSingleList(ItemList.Builder().setNoItemsMessage("No video libraries on this server").build()).build()
         }
         section("Libraries", libRows)
         return b.build()
     }
 
-    private fun playRow(item: Item): Row {
-        val sub = if (item.kind == com.moblized.jellydash.jellyfin.Kind.Episode) "${describe(item)} · ${item.name}" else describe(item)
+    private fun playRow(item: Item, downloaded: Boolean = false): Row {
+        val base = if (item.kind == com.moblized.jellydash.jellyfin.Kind.Episode) "${describe(item)} · ${item.name}" else describe(item)
+        val sub = if (downloaded) listOf("On your phone", base).filter { it.isNotBlank() }.joinToString(" · ") else base
         return Row.Builder()
             .setTitle(headline(item))
             .apply { if (sub.isNotBlank()) addText(sub) }

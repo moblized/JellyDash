@@ -87,12 +87,26 @@ data class MediaSource(
     val defaultAudioIndex: Int?,
     val defaultSubtitleIndex: Int?,
     val runTimeTicks: Long?,
+    /** The file's size in bytes, when the server knows it. */
+    val size: Long? = null,
 ) {
     val audio: List<MediaStream> get() = streams.filter { it.type == "Audio" }
     val subtitles: List<MediaStream> get() = streams.filter { it.type == "Subtitle" }
 }
 
 data class PlaybackInfo(val playSessionId: String?, val sources: List<MediaSource>)
+
+/** How subtitles should reach the phone. */
+enum class SubtitleDelivery {
+    /** Text as a separate file, pictures drawn into the video (streaming). */
+    Separate,
+
+    /** Left inside the file (downloads kept as they are). */
+    InFile,
+
+    /** Drawn into the video by the server (converted downloads). */
+    Burned,
+}
 
 /** What to ask the server for when starting or changing a stream. */
 data class PlaybackRequest(
@@ -103,6 +117,10 @@ data class PlaybackRequest(
     val mediaSourceId: String? = null,
     /** Make the server send its own stream, for a different audio track. */
     val forceServerStream: Boolean = false,
+    /** Largest picture the server should send; bigger files get scaled down. */
+    val maxWidth: Int? = null,
+    val maxHeight: Int? = null,
+    val subtitles: SubtitleDelivery = SubtitleDelivery.Separate,
 )
 
 /** One playback report to the server, so resume points and "watched" stay in sync. */

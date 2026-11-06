@@ -21,6 +21,11 @@ import com.moblized.jellydash.data.Prefs
 import com.moblized.jellydash.jellyfin.Browse
 import com.moblized.jellydash.jellyfin.Sort
 import com.moblized.jellydash.safety.MotionGuard
+import com.moblized.jellydash.data.DownloadQuality
+import com.moblized.jellydash.downloads.DownloadEntry
+import com.moblized.jellydash.jellyfin.JellyfinException
+import com.moblized.jellydash.jellyfin.Library
+import androidx.media3.exoplayer.offline.Download
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -161,6 +166,25 @@ class CarScreensTest {
         guard.tick()
         idle()
         assertTrue(titles().contains("I'm parked"))
+    }
+
+    @Test
+    fun downloadsComeFirstAndStillShowOffline() {
+        signIn()
+        Graph.downloads(car).setEntriesForTest(
+            listOf(DownloadEntry(server.movies[5], Download.STATE_COMPLETED, 100f, 3_000_000_000, 3_000_000_000, DownloadQuality.Truck, false, "ms-m6")),
+        )
+        val (_, t) = show(HomeScreen(car))
+        assertEquals("Downloads", (t as ListTemplate).sectionedLists.first().header.toString())
+        assertTrue(rows(t).first().texts.first().toString().startsWith("On your phone"))
+
+        val down = object : FakeJellyfin() {
+            override suspend fun libraries(): List<Library> = throw JellyfinException("Can't reach the server")
+        }
+        Graph.override(jellyfin = down)
+        val (_, off) = show(HomeScreen(car))
+        assertTrue("got $off", off is ListTemplate)
+        assertEquals(listOf("Offline · your downloads"), (off as ListTemplate).sectionedLists.map { it.header.toString() })
     }
 
     @Test

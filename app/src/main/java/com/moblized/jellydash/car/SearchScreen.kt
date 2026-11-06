@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 /** Search your whole server. The keyboard only shows while parked; that's Android Auto's rule. */
 class SearchScreen(carContext: CarContext) : Screen(carContext) {
     private val jellyfin = Graph.jellyfin(carContext)
-    private val posters = Posters(jellyfin, lifecycleScope, 160) { invalidate() }
+    private val posters = Posters(jellyfin, lifecycleScope, 160, Graph.downloads(carContext)::posterFile) { invalidate() }
     private var text = ""
     private var results: List<Item> = emptyList()
     private var searching = false

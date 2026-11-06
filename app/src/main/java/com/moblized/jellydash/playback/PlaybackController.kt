@@ -19,7 +19,10 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.moblized.jellydash.BuildConfig
 import com.moblized.jellydash.data.Prefs
+import com.moblized.jellydash.data.LocalProgress
 import com.moblized.jellydash.data.WhenMoving
+import com.moblized.jellydash.downloads.DownloadCenter
+import com.moblized.jellydash.jellyfin.MediaSource
 import com.moblized.jellydash.jellyfin.Item
 import com.moblized.jellydash.jellyfin.Jellyfin
 import com.moblized.jellydash.jellyfin.JellyfinException
@@ -52,7 +55,14 @@ data class NowPlaying(
     val buffering: Boolean = false,
     val ended: Boolean = false,
     val error: String? = null,
+    /** Playing a download from the phone's storage. */
+    val offline: Boolean = false,
+    /** Audio and subtitle choices inside a downloaded file. */
+    val localTracks: Int = 0,
 )
+
+/** An audio or subtitle track inside a downloaded file. */
+data class LocalTrack(val type: Int, val group: Int, val track: Int, val label: String, val selected: Boolean)
 
 /**
  * Plays one video at a time from your server, keeps Jellyfin up to date on where you are, and
@@ -64,6 +74,7 @@ class PlaybackController(
     private val prefs: Prefs,
     private val jellyfin: Jellyfin,
     private val guard: MotionGuard,
+    private val downloads: DownloadCenter,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val _state = MutableStateFlow<NowPlaying?>(null)
@@ -105,13 +116,16 @@ class PlaybackController(
             }
         }
 
-        override fun onTracksChanged(tracks: Tracks) = pickSideSubtitle(tracks)
+        override fun onTracksChanged(tracks: Tracks) {
+            pickSideSubtitle(tracks)
+            _state.update { it?.copy(localTracks = localTracks().size) }
+        }
 
         override fun onPlayerError(error: PlaybackException) = recover(error)
     }
 
     private fun ensurePlayer(): ExoPlayer = player ?: ExoPlayer.Builder(context)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http)))
+        .setMediaSourceFactory(DefaultMediaSourceFactory(downloads.playbackSource(DefaultDataSource.Factory(context, http))))
         .setAudioAttributes(
             AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
             true,
@@ -125,10 +139,41 @@ class PlaybackController(
             player = it
         }
 
-    /** Starts [item], from where you left off unless [fromStart]. */
+    /** Starts [item], from where you left off unless [fromStart]. Downloads play from the phone. */
     fun play(item: Item, fromStart: Boolean = false) {
         finish()
         begin(item, fromStart)
+    }
+
+    /** Plays a finished download from the phone's storage: no server needed. */
+    private fun beginOffline(item: Item, fromStart: Boolean): Boolean {
+        val entry = downloads.completed(item.id) ?: return false
+        val media = downloads.mediaItem(item.id) ?: return false
+        val saved = prefs.localProgress(item.id)
+        val startMs = when {
+            fromStart -> 0L
+            saved != null -> if (saved.played) 0L else saved.positionMs
+            item.played -> 0L
+            else -> item.positionMs
+        }
+        // Prefer the newer details from the server when online, else the ones saved with the download.
+        val shown = if (item.name.isNotBlank()) item else entry.item
+        _state.value = NowPlaying(shown, titleOf(shown), subtitleOf(shown), offline = true)
+        val plan = StreamPlan(
+            url = media.localConfiguration?.uri?.toString() ?: "",
+            isHls = media.localConfiguration?.mimeType == MimeTypes.APPLICATION_M3U8,
+            playMethod = "DirectPlay",
+            source = MediaSource(entry.mediaSourceId, null, true, true, null, emptyList(), null, null, item.runTimeTicks),
+            playSessionId = null,
+            audioIndex = null,
+            subtitleIndex = -1,
+            subtitle = null,
+        )
+        loadItem(media.buildUpon().setMediaId(item.id), plan, startMs, playWhenReady = true, offline = true)
+        report(ReportKind.Start)
+        startProgress()
+        PlaybackService.start(context)
+        return true
     }
 
     /** Plays the next episode of a show or season you haven't finished. */
@@ -172,6 +217,7 @@ class PlaybackController(
 
     private fun begin(item: Item, fromStart: Boolean) {
         triedServerStream = false
+        if (beginOffline(item, fromStart)) return
         val startMs = if (fromStart || item.played) 0L else item.positionMs
         _state.value = NowPlaying(item, titleOf(item), subtitleOf(item))
         loadJob = scope.launch {
@@ -190,12 +236,9 @@ class PlaybackController(
 
     private fun load(plan: StreamPlan, startMs: Long, playWhenReady: Boolean) {
         val state = _state.value ?: return
-        val p = ensurePlayer()
-        http.setDefaultRequestProperties(jellyfin.streamHeaders())
         val builder = MediaItem.Builder()
             .setUri(plan.url)
             .setMediaId(state.item.id)
-            .setMediaMetadata(MediaMetadata.Builder().setTitle(state.title).setSubtitle(state.subtitle).build())
         if (plan.isHls) builder.setMimeType(MimeTypes.APPLICATION_M3U8)
         plan.subtitle?.let { s ->
             builder.setSubtitleConfigurations(
@@ -210,11 +253,21 @@ class PlaybackController(
                 ),
             )
         }
-        // Only the subtitles you picked: never ones tucked inside the file as well.
-        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+        loadItem(builder, plan, startMs, playWhenReady, offline = false)
+    }
+
+    private fun loadItem(builder: MediaItem.Builder, plan: StreamPlan, startMs: Long, playWhenReady: Boolean, offline: Boolean) {
+        val state = _state.value ?: return
+        val p = ensurePlayer()
+        http.setDefaultRequestProperties(jellyfin.streamHeaders())
+        builder.setMediaMetadata(MediaMetadata.Builder().setTitle(state.title).setSubtitle(state.subtitle).build())
+        val params = p.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, plan.subtitle == null)
-            .build()
+            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+        // Streaming: only the subtitles you picked, never ones tucked inside the file as well.
+        // Downloads: whatever the file marks as default, changeable from the player.
+        params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !offline && plan.subtitle == null)
+        p.trackSelectionParameters = params.build()
         p.setMediaItem(builder.build(), startMs)
         p.prepare()
         val holdForMotion = prefs.currentSettings.whenMoving == WhenMoving.Pause && guard.status.value.reason == MotionGuard.Reason.Moving
@@ -239,6 +292,10 @@ class PlaybackController(
     private fun recover(error: PlaybackException) {
         val state = _state.value ?: return
         val plan = state.plan
+        if (state.offline) {
+            _state.update { it?.copy(error = "This download can't play (${error.errorCodeName}). Try downloading it as \"Best for the truck\".", loading = false, isPlaying = false) }
+            return
+        }
         if (plan != null && plan.playMethod == "DirectPlay" && !triedServerStream) {
             triedServerStream = true
             reload(plan.audioIndex, plan.subtitleIndex, forceServer = true)
@@ -274,6 +331,7 @@ class PlaybackController(
     }
 
     fun chooseAudio(index: Int) {
+        if (_state.value?.offline == true) return
         val plan = _state.value?.plan ?: return
         if (index == plan.audioIndex) return
         reload(index, plan.subtitleIndex, forceServer = StreamPlanner.audioNeedsServer(plan.source, index))
@@ -281,6 +339,7 @@ class PlaybackController(
 
     /** -1 turns subtitles off. */
     fun chooseSubtitle(index: Int) {
+        if (_state.value?.offline == true) return
         val plan = _state.value?.plan ?: return
         if (index == plan.subtitleIndex) return
         reload(plan.audioIndex, index, forceServer = StreamPlanner.audioNeedsServer(plan.source, plan.audioIndex) || triedServerStream)
@@ -315,6 +374,64 @@ class PlaybackController(
         }
     }
 
+    /** Audio and subtitle tracks inside a downloaded file. */
+    fun localTracks(): List<LocalTrack> {
+        val p = player ?: return emptyList()
+        if (_state.value?.offline != true) return emptyList()
+        val out = mutableListOf<LocalTrack>()
+        p.currentTracks.groups.forEachIndexed { gi, g ->
+            if (g.type != C.TRACK_TYPE_AUDIO && g.type != C.TRACK_TYPE_TEXT) return@forEachIndexed
+            for (ti in 0 until g.length) {
+                if (!g.isTrackSupported(ti)) continue
+                out += LocalTrack(g.type, gi, ti, labelOf(g.getTrackFormat(ti), out.count { it.type == g.type } + 1), g.isTrackSelected(ti))
+            }
+        }
+        return out
+    }
+
+    fun chooseLocal(t: LocalTrack) {
+        val p = player ?: return
+        val g = p.currentTracks.groups.getOrNull(t.group) ?: return
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(t.type, false)
+            .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, t.track))
+            .build()
+    }
+
+    fun localSubtitlesOff() {
+        val p = player ?: return
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            .build()
+    }
+
+    private fun labelOf(f: androidx.media3.common.Format, n: Int): String {
+        val lang = f.language?.takeIf { it != "und" }?.let { java.util.Locale.forLanguageTag(it).displayLanguage.ifBlank { it } }
+        val channels = when (f.channelCount) {
+            1 -> "Mono"
+            2 -> "Stereo"
+            6 -> "5.1"
+            8 -> "7.1"
+            else -> null
+        }
+        return listOfNotNull(f.label ?: lang ?: "Track $n", channels?.takeIf { f.label == null }).joinToString(" · ")
+    }
+
+    /** Sends progress saved while offline to the server. Call when the server is reachable. */
+    suspend fun syncOfflineProgress() {
+        for ((id, p) in prefs.unsyncedProgress()) {
+            val ok = runCatching {
+                if (p.played) {
+                    jellyfin.markPlayed(id)
+                } else {
+                    jellyfin.report(ReportKind.Stopped, PlaybackReport(id, id, null, Ticks.fromMs(p.positionMs), false, "DirectPlay", null, null))
+                }
+            }.isSuccess
+            if (ok) prefs.saveProgress(id, p.copy(synced = true))
+        }
+    }
+
     /** Stops playback and tells the server where you got to. */
     fun stop() = finish()
 
@@ -330,9 +447,15 @@ class PlaybackController(
                 val r = reportOf(state, plan, p, null)
                 val session = plan.playSessionId
                 val transcoding = plan.playMethod == "Transcode"
+                val duration = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: state.item.runTimeMs ?: 0L
+                val played = state.ended || (duration > 0 && p.currentPosition >= duration * 9 / 10)
+                val itemId = state.item.id
+                val local = LocalProgress(p.currentPosition, played, synced = false)
+                prefs.saveProgress(itemId, local)
                 // Not tied to [scope] being busy: the report still goes out after the screen closes.
                 CoroutineScope(Dispatchers.IO).launch {
-                    runCatching { jellyfin.report(ReportKind.Stopped, r) }
+                    val sent = runCatching { jellyfin.report(ReportKind.Stopped, r) }.isSuccess
+                    if (sent) prefs.saveProgress(itemId, local.copy(synced = true))
                     if (transcoding && session != null) runCatching { jellyfin.stopEncoding(session) }
                 }
             }

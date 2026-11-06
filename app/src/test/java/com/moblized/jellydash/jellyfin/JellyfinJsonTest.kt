@@ -125,6 +125,28 @@ class JellyfinJsonTest {
     }
 
     @Test
+    fun itemsSurviveBeingSavedWithADownload() {
+        val ep = JellyfinJson.item(JSONObject(episode))
+        val back = JellyfinJson.item(JellyfinJson.itemToJson(ep))
+        assertEquals(ep, back)
+        val movie = JellyfinJson.item(JSONObject("""{"Name":"Heat","Id":"m1","Type":"Movie","ProductionYear":1995,"ImageTags":{"Primary":"t1"},"UserData":{"PlaybackPositionTicks":5,"Played":false}}"""))
+        assertEquals(movie, JellyfinJson.item(JellyfinJson.itemToJson(movie)))
+    }
+
+    @Test
+    fun downloadProfileCapsSizeAndKeepsSubtitlesInTheFile() {
+        val p = DeviceProfile.build(10_000_000, 1920, 1080, SubtitleDelivery.InFile)
+        val codecs = p.getJSONArray("CodecProfiles")
+        val h264 = (0 until codecs.length()).map { codecs.getJSONObject(it) }.first { it.optString("Codec") == "h264" }
+        val props = (0 until h264.getJSONArray("Conditions").length()).map { h264.getJSONArray("Conditions").getJSONObject(it).getString("Property") }
+        assertTrue(props.containsAll(listOf("Width", "Height")))
+        val subs = p.getJSONArray("SubtitleProfiles")
+        assertTrue((0 until subs.length()).all { subs.getJSONObject(it).getString("Method") == "Embed" })
+        val burned = DeviceProfile.build(10_000_000, subtitles = SubtitleDelivery.Burned).getJSONArray("SubtitleProfiles")
+        assertTrue((0 until burned.length()).all { burned.getJSONObject(it).getString("Method") == "Encode" })
+    }
+
+    @Test
     fun ticksAndClocks() {
         assertEquals("1 hr 42 min", Ticks.duration(102 * 60_000L))
         assertEquals("42 min", Ticks.duration(42 * 60_000L))

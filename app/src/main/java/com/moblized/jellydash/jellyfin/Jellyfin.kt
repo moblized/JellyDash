@@ -38,6 +38,9 @@ interface Jellyfin {
     suspend fun report(kind: ReportKind, report: PlaybackReport)
     suspend fun stopEncoding(playSessionId: String)
 
+    /** Marks something watched. */
+    suspend fun markPlayed(itemId: String)
+
     /** Raw image bytes, or null if the server has none. */
     suspend fun image(url: String): ByteArray?
     fun imageUrl(item: Item, height: Int): String?

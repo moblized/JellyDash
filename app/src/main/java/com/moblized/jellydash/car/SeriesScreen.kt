@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
  */
 class SeriesScreen(carContext: CarContext, private val show: Item, private val seasonsAsRows: Boolean) : Screen(carContext) {
     private val jellyfin = Graph.jellyfin(carContext)
-    private val posters = Posters(jellyfin, lifecycleScope, 160) { invalidate() }
+    private val posters = Posters(jellyfin, lifecycleScope, 160, Graph.downloads(carContext)::posterFile) { invalidate() }
     private var loaded = false
     private var error: String? = null
     private var next: Item? = null
@@ -98,7 +98,7 @@ class SeriesScreen(carContext: CarContext, private val show: Item, private val s
 /** One season's episodes. Tapping one plays it, picking up where you left off. */
 class EpisodesScreen(carContext: CarContext, private val seriesId: String, private val season: Item) : Screen(carContext) {
     private val jellyfin = Graph.jellyfin(carContext)
-    private val posters = Posters(jellyfin, lifecycleScope, 160) { invalidate() }
+    private val posters = Posters(jellyfin, lifecycleScope, 160, Graph.downloads(carContext)::posterFile) { invalidate() }
     private var episodes: List<Item>? = null
     private var error: String? = null
     private val title = season.seriesName?.let { "$it · ${season.name}" } ?: season.name

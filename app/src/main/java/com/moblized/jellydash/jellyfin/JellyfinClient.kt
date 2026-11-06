@@ -279,7 +279,7 @@ class JellyfinClient(
     override suspend fun playbackInfo(itemId: String, request: PlaybackRequest): PlaybackInfo {
         val body = JSONObject().apply {
             put("UserId", userId())
-            put("DeviceProfile", DeviceProfile.build(request.maxBitrate))
+            put("DeviceProfile", DeviceProfile.build(request.maxBitrate, request.maxWidth, request.maxHeight, request.subtitles))
             put("MaxStreamingBitrate", request.maxBitrate)
             request.audioIndex?.let { put("AudioStreamIndex", it) }
             request.subtitleIndex?.let { put("SubtitleStreamIndex", it) }
@@ -306,6 +306,15 @@ class JellyfinClient(
     override suspend fun stopEncoding(playSessionId: String) {
         val a = account()
         call(a.server, "DELETE", "/Videos/ActiveEncodings?" + query(mapOf("deviceId" to prefs.deviceId, "playSessionId" to playSessionId)), a.token)
+    }
+
+    override suspend fun markPlayed(itemId: String) {
+        val uid = userId()
+        try {
+            post("/UserPlayedItems/$itemId", "", mapOf("userId" to uid))
+        } catch (e: JellyfinException) {
+            if (e.code == 404) post("/Users/$uid/PlayedItems/$itemId", "") else throw e
+        }
     }
 
     // ---- Addresses ----

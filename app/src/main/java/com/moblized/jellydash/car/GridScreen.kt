@@ -28,7 +28,7 @@ class GridScreen(
     private val count: Int,
 ) : Screen(carContext) {
     private val jellyfin = Graph.jellyfin(carContext)
-    private val posters = Posters(jellyfin, lifecycleScope, 180) { invalidate() }
+    private val posters = Posters(jellyfin, lifecycleScope, 180, Graph.downloads(carContext)::posterFile) { invalidate() }
     private val page = carContext.gridPage()
     private var items: List<Item>? = null
     private var error: String? = null

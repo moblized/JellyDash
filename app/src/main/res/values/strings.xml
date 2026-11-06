@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">JellyDash</string>
     <string name="playback_channel">Playback</string>
+    <string name="downloads_channel">Downloads</string>
 </resources>

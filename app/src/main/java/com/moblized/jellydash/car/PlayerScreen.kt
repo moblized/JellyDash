@@ -74,7 +74,7 @@ class PlayerScreen(carContext: CarContext) : Screen(carContext) {
         canConfirm = g.canConfirm,
         videoAllowed = g.videoAllowed,
         waiting = g.reason == MotionGuard.Reason.Stopped,
-        hasTracks = s?.plan?.let { it.source.audio.size > 1 || it.source.subtitles.isNotEmpty() } == true,
+        hasTracks = if (s?.offline == true) s.localTracks > 0 else s?.plan?.let { it.source.audio.size > 1 || it.source.subtitles.isNotEmpty() } == true,
         canNext = playback.canPlayNext,
     )
 

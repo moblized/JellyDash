@@ -34,6 +34,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.moblized.jellydash.data.Account
+import com.moblized.jellydash.data.DownloadQuality
 import com.moblized.jellydash.data.Quality
 import com.moblized.jellydash.data.Settings
 import com.moblized.jellydash.data.ThemeChoice
@@ -349,6 +351,21 @@ fun PhoneHomeContent(
                 detail = { it.detail },
                 onPick = { q -> onSettings { it.copy(quality = q) } },
             )
+        }
+
+        Section("Downloads") {
+            Choices(
+                options = DownloadQuality.entries,
+                selected = settings.downloadQuality,
+                label = { it.label },
+                detail = { it.detail },
+                onPick = { q -> onSettings { it.copy(downloadQuality = q) } },
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Only download on Wi-Fi", color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+                Switch(checked = settings.wifiOnly, onCheckedChange = { on -> onSettings { it.copy(wifiOnly = on) } })
+            }
         }
 
         Section("Appearance") {

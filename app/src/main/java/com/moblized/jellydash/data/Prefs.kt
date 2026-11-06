@@ -29,11 +29,23 @@ enum class Quality(val bitsPerSecond: Int, val label: String, val detail: String
     Original(120_000_000, "Original", "Plays files as they are when it can"),
 }
 
+/** How downloads are saved. */
+enum class DownloadQuality(val label: String, val detail: String) {
+    Truck("Best for the truck", "Up to 1080p, the most a car screen shows. Files that already fit are saved exactly as they are"),
+    Original("Original file", "Exactly as it is on your server. Biggest, and 4K HDR or surround-only files may not play right"),
+    Saver("Space saver", "720p, about 2 GB for a two-hour movie"),
+}
+
 data class Settings(
     val quality: Quality = Quality.Medium,
     val whenMoving: WhenMoving = WhenMoving.KeepAudio,
     val theme: ThemeChoice = ThemeChoice.System,
+    val downloadQuality: DownloadQuality = DownloadQuality.Truck,
+    val wifiOnly: Boolean = true,
 )
+
+/** Where you got to in something, kept on the phone so downloads resume offline. */
+data class LocalProgress(val positionMs: Long, val played: Boolean, val synced: Boolean)
 
 /**
  * Everything the app remembers. The sign-in lives in its own file so it can be left out of
@@ -94,6 +106,8 @@ open class Prefs(context: Context) {
         quality = enumOr(settings.getString("quality", null), Quality.Medium),
         whenMoving = enumOr(settings.getString("when_moving", null), WhenMoving.KeepAudio),
         theme = enumOr(settings.getString("theme", null), ThemeChoice.System),
+        downloadQuality = enumOr(settings.getString("download_quality", null), DownloadQuality.Truck),
+        wifiOnly = settings.getBoolean("wifi_only", true),
     )
 
     fun update(change: (Settings) -> Settings) {
@@ -102,6 +116,8 @@ open class Prefs(context: Context) {
             .putString("quality", s.quality.name)
             .putString("when_moving", s.whenMoving.name)
             .putString("theme", s.theme.name)
+            .putString("download_quality", s.downloadQuality.name)
+            .putBoolean("wifi_only", s.wifiOnly)
             .apply()
         _settings.value = s
     }
@@ -112,6 +128,23 @@ open class Prefs(context: Context) {
         ThemeChoice.System ->
             (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
     }
+
+    private val progress = context.getSharedPreferences("progress", Context.MODE_PRIVATE)
+
+    fun localProgress(itemId: String): LocalProgress? {
+        val raw = progress.getString(itemId, null) ?: return null
+        val parts = raw.split('|')
+        if (parts.size != 3) return null
+        return LocalProgress(parts[0].toLongOrNull() ?: return null, parts[1] == "1", parts[2] == "1")
+    }
+
+    fun saveProgress(itemId: String, p: LocalProgress) {
+        progress.edit().putString(itemId, "${p.positionMs}|${if (p.played) 1 else 0}|${if (p.synced) 1 else 0}").apply()
+    }
+
+    /** Progress not yet sent to the server, because there was no connection at the time. */
+    fun unsyncedProgress(): Map<String, LocalProgress> =
+        progress.all.keys.mapNotNull { id -> localProgress(id)?.takeIf { !it.synced }?.let { id to it } }.toMap()
 
     var lastUpdateCheck: Long
         get() = settings.getLong("last_update_check", 0)
