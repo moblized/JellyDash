@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
@@ -56,9 +57,16 @@ import com.moblized.jellydash.data.Quality
 import com.moblized.jellydash.data.Settings
 import com.moblized.jellydash.data.ThemeChoice
 import com.moblized.jellydash.data.WhenMoving
+import com.moblized.jellydash.update.InstallSource
+import com.moblized.jellydash.update.Updates
 
 /** Which phone permissions are on. */
-data class Perms(val location: Boolean, val notifications: Boolean)
+data class Perms(
+    val location: Boolean,
+    val notifications: Boolean,
+    /** Installed with the "from Google Play" record Android Auto needs. */
+    val autoReady: Boolean = false,
+)
 
 @Composable
 private fun Wordmark(modifier: Modifier = Modifier) {
@@ -268,6 +276,18 @@ fun PhoneHomeContent(
         }
 
         Section("Set up the truck") {
+            val links = LocalUriHandler.current
+            Check(
+                done = perms.autoReady,
+                title = "Installed for Android Auto",
+                body = if (perms.autoReady) {
+                    "Android Auto will list JellyDash."
+                } else {
+                    "Android Auto only runs apps it thinks came from Google Play. Reinstall JellyDash with UnknownAuto, a free tool that does that right on the phone."
+                },
+                action = if (perms.autoReady) null else "Get UnknownAuto",
+                onAction = { links.openUri(InstallSource.UNKNOWN_AUTO_URL) },
+            )
             Check(
                 done = perms.location,
                 title = "Parked check",
@@ -289,13 +309,17 @@ fun PhoneHomeContent(
             Spacer(Modifier.height(10.dp))
             Text("Show JellyDash on Android Auto", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(4.dp))
-            Step(1, "On your phone, open Settings › Connected devices › Android Auto.")
-            Step(2, "Scroll down and tap Version 10 times, then OK, to turn on developer settings.")
-            Step(3, "Tap ⋮ › Developer settings and turn on Unknown sources.")
-            Step(4, "In the truck, open the app list on the Uconnect screen and pick JellyDash.")
+            if (!perms.autoReady) {
+                Step(1, "Install UnknownAuto and Shizuku, then start Shizuku with Wireless debugging. UnknownAuto walks you through it, no computer needed.")
+                Step(2, "Download the newest JellyDash APK. In UnknownAuto, tap Load APK…, pick it, and tap Install. It installs over this copy and keeps your sign-in.")
+                OutlinedButton(onClick = { links.openUri(Updates.RELEASES_PAGE) }, modifier = Modifier.padding(start = 34.dp)) { Text("Download JellyDash") }
+            }
+            val n = if (perms.autoReady) 0 else 2
+            Step(n + 1, "Open Settings › Connected devices › Android Auto. Tap Version 10 times, then ⋮ › Developer settings, and turn on Unknown sources.")
+            Step(n + 2, "Unplug the phone or turn Bluetooth off and on, so the truck reloads its app list. Then pick JellyDash from the app list on the Uconnect screen.")
             Spacer(Modifier.height(6.dp))
             Text(
-                "JellyDash shows up with the navigation apps. That's how it gets the whole screen for video.",
+                "JellyDash shows up with the navigation apps. That's how it gets the whole screen for video. If it's missing, check Customize launcher in Android Auto's settings.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -368,6 +392,14 @@ fun PhoneHomeContent(
                     Text("Downloading ${update.release.versionName}…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(6.dp))
                     LinearProgressIndicator(progress = { update.progress }, modifier = Modifier.fillMaxWidth())
+                }
+                is UpdateState.Saved -> {
+                    Text("Saved ${update.fileName} to Downloads.", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Text(
+                        "Open UnknownAuto, tap Load APK…, pick it and tap Install. Installing it the usual way would hide JellyDash from Android Auto.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 is UpdateState.Failed -> {
                     Text(update.message, color = MaterialTheme.colorScheme.error)

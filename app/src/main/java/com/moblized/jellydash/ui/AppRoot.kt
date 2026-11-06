@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.moblized.jellydash.update.InstallSource
 
 private fun granted(context: Context, permission: String) =
     ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
@@ -26,6 +27,7 @@ private fun granted(context: Context, permission: String) =
 fun permsOf(context: Context) = Perms(
     location = granted(context, Manifest.permission.ACCESS_FINE_LOCATION),
     notifications = Build.VERSION.SDK_INT < 33 || granted(context, Manifest.permission.POST_NOTIFICATIONS),
+    autoReady = InstallSource.readyForAndroidAuto(context),
 )
 
 @Composable
@@ -79,8 +81,11 @@ fun AppRoot(model: AppModel) {
             AlertDialog(
                 onDismissRequest = { model.snooze(r) },
                 title = { Text("JellyDash ${r.versionName} is out") },
-                text = { Text(r.notes.ifBlank { "A new version is ready to install." }) },
-                confirmButton = { TextButton(onClick = { model.install(r) }) { Text("Install") } },
+                text = {
+                    val notes = r.notes.ifBlank { "A new version is ready." }
+                    Text(if (perms.autoReady) "$notes\n\nIt downloads to your Downloads folder. Install it with UnknownAuto so Android Auto keeps showing JellyDash." else notes)
+                },
+                confirmButton = { TextButton(onClick = { model.install(r) }) { Text(if (perms.autoReady) "Download" else "Install") } },
                 dismissButton = { TextButton(onClick = { model.snooze(r) }) { Text("Later") } },
             )
         }

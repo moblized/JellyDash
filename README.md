@@ -18,10 +18,17 @@ Allow location for JellyDash on your phone so the check works. Without it the ap
 
 ## Setup
 
-1. Install the APK from [Releases](../../releases) on your phone (allow "Install unknown apps" for your browser the first time). After that the app offers updates itself.
-2. Open JellyDash on the phone, sign in to your server (use the address that works away from home), and allow location.
-3. Turn on unknown sources in Android Auto: **Settings › Connected devices › Android Auto**, tap **Version** 10 times to turn on developer settings, then **⋮ › Developer settings › Unknown sources**.
-4. In the truck, open the app list on the screen and pick JellyDash. It's listed with the navigation apps.
+Android Auto only runs apps built with the Car App Library when Android records them as installed by Google Play. The "Unknown sources" switch in Android Auto doesn't change that, so JellyDash is installed with [UnknownAuto](https://github.com/GitMag/UnknownAuto), a free, open-source tool that sets that record, right on the phone (it uses Shizuku over Wireless debugging; no computer or root).
+
+1. Install [UnknownAuto](https://github.com/GitMag/UnknownAuto/releases/latest) and Shizuku, and start Shizuku with Wireless debugging. UnknownAuto walks you through it.
+2. Download the JellyDash APK from [Releases](../../releases/latest). In UnknownAuto, tap **Load APK…**, pick it, and tap **Install**.
+3. Open JellyDash on the phone, sign in to your server (use the address that works away from home), and allow location. The setup card shows a check when the install is one Android Auto accepts.
+4. In **Settings › Connected devices › Android Auto**, tap **Version** 10 times to turn on developer settings, then **⋮ › Developer settings › Unknown sources**.
+5. Reconnect the phone so the car reloads its app list, then pick JellyDash from the app list. It's listed with the navigation apps. If it's missing, check **Customize launcher** in Android Auto's settings.
+
+**Updates:** installing an update the usual way wipes the "from Google Play" record and hides JellyDash in the car. When JellyDash was installed with UnknownAuto, its updater saves new versions to your Downloads folder instead; install them with UnknownAuto too.
+
+With a computer instead: `adb install -r -i com.android.vending JellyDash-1.0.x.apk` does the same thing.
 
 ## Why it's a "navigation app"
 

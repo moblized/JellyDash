@@ -8,6 +8,7 @@ import com.moblized.jellydash.IconSwitcher
 import com.moblized.jellydash.data.Account
 import com.moblized.jellydash.data.Settings
 import com.moblized.jellydash.update.AppRelease
+import com.moblized.jellydash.update.InstallSource
 import com.moblized.jellydash.update.Updater
 import com.moblized.jellydash.update.Updates
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +31,9 @@ sealed interface UpdateState {
     data object UpToDate : UpdateState
     data class Available(val release: AppRelease) : UpdateState
     data class Downloading(val release: AppRelease, val progress: Float) : UpdateState
+
+    /** Saved to Downloads for UnknownAuto, so Android Auto keeps showing the app. */
+    data class Saved(val release: AppRelease, val fileName: String) : UpdateState
     data class Failed(val message: String) : UpdateState
 }
 
@@ -121,6 +125,21 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun install(release: AppRelease) {
         _prompt.value = null
+        val app = getApplication<Application>()
+        if (InstallSource.readyForAndroidAuto(app)) {
+            // A normal install would lose the "from Google Play" record and hide JellyDash in the car.
+            _update.value = UpdateState.Downloading(release, 0f)
+            viewModelScope.launch {
+                try {
+                    val file = updater.download(release) { p -> _update.value = UpdateState.Downloading(release, p) }
+                    val name = InstallSource.saveToDownloads(app, file)
+                    _update.value = UpdateState.Saved(release, name)
+                } catch (e: Exception) {
+                    _update.value = UpdateState.Failed(e.message ?: "Download failed")
+                }
+            }
+            return
+        }
         if (!updater.canInstall()) {
             updater.openInstallPermission()
             _update.value = UpdateState.Available(release)

@@ -13,8 +13,9 @@ data class AppRelease(
 )
 
 object Updates {
-    const val REPO = "moblized/jellydash"
+    const val REPO = "moblized/JellyDash"
     const val LATEST_URL = "https://api.github.com/repos/$REPO/releases/latest"
+    const val RELEASES_PAGE = "https://github.com/$REPO/releases/latest"
     const val CHECK_EVERY_MS = 6 * 60 * 60 * 1000L
     const val SNOOZE_MS = 24 * 60 * 60 * 1000L
 
