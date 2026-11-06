@@ -1,0 +1,104 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Build release APK and run tests
+        id: gradle
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon testDebugUnitTest assembleRelease 2>&1 | tee gradle.log
+
+      - name: Test summary
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          total = fails = skipped = 0
+          failed = []
+          for f in glob.glob("app/build/test-results/testDebugUnitTest/*.xml"):
+              r = ET.parse(f).getroot()
+              total += int(r.get("tests", 0)); fails += int(r.get("failures", 0)) + int(r.get("errors", 0)); skipped += int(r.get("skipped", 0))
+              for c in r.findall("testcase"):
+                  bad = c.find("failure")
+                  if bad is None:
+                      bad = c.find("error")
+                  if bad is not None:
+                      failed.append(f"{c.get('classname').split('.')[-1]}.{c.get('name')}: {(bad.get('message') or '')[:300]}")
+          msg = f"{total} tests, {fails} failed, {skipped} skipped%0A" + "%0A".join(failed[:40]).replace("\n", " ")
+          print(f"::notice title=Unit tests::{msg}")
+          PY
+
+      - name: Publish UI screenshots
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls app/build/screenshots/*.png 2>/dev/null || exit 0
+          gh release view screenshots >/dev/null 2>&1 || \
+            gh release create screenshots --prerelease --title "UI screenshots" --notes "Rendered by CI from the latest build."
+          gh release upload screenshots app/build/screenshots/*.png --clobber
+
+      - name: Publish test logs
+        if: steps.gradle.outcome == 'failure'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls app/build/test-results/testDebugUnitTest/*.xml 2>/dev/null || exit 0
+          gh release view screenshots >/dev/null 2>&1 || \
+            gh release create screenshots --prerelease --title "UI screenshots" --notes "Rendered by CI from the latest build."
+          gh release upload screenshots app/build/test-results/testDebugUnitTest/*.xml --clobber
+
+      - name: Report errors
+        if: steps.gradle.outcome == 'failure'
+        run: |
+          python3 tools/ci_report.py gradle.log
+          exit 1
+
+      - name: Rename APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk out/JellyDash-1.0.${{ github.run_number }}.apk
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: JellyDash-apk
+          path: out/*.apk
+
+      - name: Release notes
+        # The app's update prompt shows these as what's new.
+        run: git log -1 --format=%B | grep -v -E '^(Co-Authored-By|Claude-Session):' > notes.md
+
+      - name: Publish release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: JellyDash 1.0.${{ github.run_number }}
+          body_path: notes.md
+          files: out/*.apk
+          make_latest: true

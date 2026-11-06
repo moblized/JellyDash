@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.JellyDash" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+    <!-- The video screen on Android Auto -->
+    <style name="Theme.JellyDash.Car" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+    <color name="window_bg">#F6F3FB</color>
+    <color name="icon_bg">#F6F3FB</color>
+    <color name="icon_bg_dark">#120D2B</color>
+</resources>
